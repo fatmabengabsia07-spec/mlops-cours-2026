@@ -39,8 +39,13 @@ def copy(src: str | Path, dst: str | Path) -> None:
         shutil.copyfile(src, dst)
 
 
+_MODULE_OK = re.compile(r"src(\.[A-Za-z_][A-Za-z0-9_]*)+")
+
+
 def execute(module: str, args, workdir: Path, env: dict | None = None) -> None:
     """Lance python -m <module> <args> dans workdir, avec le code et le contrat du projet."""
+    if not _MODULE_OK.fullmatch(module):
+        raise ValueError(f"module non autorisé : {module!r}")
     shutil.copyfile(ROOT / "params.yaml", workdir / "params.yaml")
     run_env = {**os.environ, **(env or {})}
     run_env["PYTHONPATH"] = os.pathsep.join(filter(None, [str(ROOT), os.getenv("PYTHONPATH")]))
