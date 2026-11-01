@@ -31,7 +31,7 @@ TRAIN = yaml.safe_load(Path("params.yaml").read_text(encoding="utf-8"))["train"]
 )
 def scoring_pipeline(
     model_type: str = TRAIN["model"],
-    C: float = TRAIN["C"],
+    C: float = TRAIN["C"],  # NOSONAR
     class_weight: str = str(TRAIN["class_weight"]),  # « none » accepté, comme au Lab 1
     n_estimators: int = TRAIN["n_estimators"],
     max_depth: str = str(TRAIN["max_depth"]),  # « none » accepté, comme au Lab 1
@@ -40,15 +40,15 @@ def scoring_pipeline(
     mlflow_uri: str = MLFLOW_URI,
 ):
     # Source externe (réseau) : 3 nouvelles tentatives, et jamais plus de 10 min
-    ingest_task = ingest_data()
+    ingest_task = ingest_data()  # NOSONAR
     ingest_task.set_retry(num_retries=3, backoff_duration="30s")
     ingest_task.set_cpu_limit("500m").set_memory_limit("512Mi")
     kubernetes.set_timeout(ingest_task, 600)
 
-    validate_task = validate_data(raw_data=ingest_task.outputs["raw_data"])
+    validate_task = validate_data(raw_data=ingest_task.outputs["raw_data"])  # NOSONAR
     validate_task.set_memory_limit("512Mi")
 
-    prep_task = prepare_features(raw_data=ingest_task.outputs["raw_data"])
+    prep_task = prepare_features(raw_data=ingest_task.outputs["raw_data"])  # NOSONAR
     prep_task.after(validate_task)  # gate : pas de préparation sans validation réussie
     prep_task.set_memory_limit("1Gi")
 

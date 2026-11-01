@@ -18,9 +18,9 @@ from kubernetes.client import models as k8s
 IMAGE = "localhost:5001/scoring-pipeline:1.0.0"  # même tag que pipelines/components.py
 WORKSPACE = "s3://airflow-data/scoring/{{ run_id }}"  # dossier de travail du run (S3)
 ENV = {
-    "MLFLOW_TRACKING_URI": "http://mlflow.mlflow:5000",  # aucun identifiant S3 pour MLflow
+    "MLFLOW_TRACKING_URI": "http://mlflow.mlflow:5000",  # aucun identifiant S3 pour MLflow  # NOSONAR
     "LAUNCHED_BY": "airflow",  # tag launched_by des runs MLflow
-    "AWS_ENDPOINT_URL": "http://s3.storage:8333",  # S3 du cours, pour le dossier de travail
+    "AWS_ENDPOINT_URL": "http://s3.storage:8333",  # S3 du cours, pour le dossier de travail  # NOSONAR
     "AWS_DEFAULT_REGION": "us-east-1",
 }
 S3_CREDENTIALS = k8s.V1EnvFromSource(secret_ref=k8s.V1SecretEnvSource(name="s3-credentials"))

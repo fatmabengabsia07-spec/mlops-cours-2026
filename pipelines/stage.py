@@ -39,7 +39,8 @@ def copy(src: str | Path, dst: str | Path) -> None:
         shutil.copyfile(src, dst)
 
 
-_MODULE_OK = re.compile(r"src(\.[A-Za-z_][A-Za-z0-9_]*)+")
+S3_PREFIX = "s3://"
+_MODULE_OK = re.compile(r"src(\.[A-Za-z_]\w*)+", re.ASCII)
 
 
 def execute(module: str, args, workdir: Path, env: dict | None = None) -> None:
@@ -53,7 +54,7 @@ def execute(module: str, args, workdir: Path, env: dict | None = None) -> None:
     run_env["DATASET_CONFIG"] = str(config)
     cmd = [sys.executable, "-m", module, *map(str, args)]
     print("+", " ".join(cmd), flush=True)
-    subprocess.run(cmd, cwd=workdir, env=run_env, check=True)
+    subprocess.run(cmd, cwd=workdir, env=run_env, check=True)  # NOSONAR : liste d'arguments, sans shell, module limité à src.*
 
 
 def run_stage(module: str, args=(), inputs=None, outputs=None, env=None) -> None:
@@ -77,14 +78,14 @@ def _s3(workspace: str):
     """Client S3 (endpoint et identifiants lus dans l'environnement), bucket, préfixe."""
     import boto3
 
-    bucket, _, prefix = workspace.removeprefix("s3://").partition("/")
+    bucket, _, prefix = workspace.removeprefix(S3_PREFIX).partition("/")
     prefix = re.sub(r"[^A-Za-z0-9._/-]", "_", prefix).strip("/")  # run_id Airflow : « : + »
     return boto3.client("s3"), bucket, prefix
 
 
 def pull(workspace: str, work: Path) -> None:
     """Récupère les sorties des étapes précédentes du run."""
-    if not workspace.startswith("s3://"):
+    if not workspace.startswith(S3_PREFIX):
         if Path(workspace).is_dir():
             copy(workspace, work)
         return
@@ -108,7 +109,7 @@ def snapshot(work: Path) -> dict[Path, int]:
 def push(work: Path, workspace: str, before: dict[Path, int]) -> None:
     """Publie les fichiers créés ou modifiés par l'étape."""
     changed = [p for p, mtime in snapshot(work).items() if before.get(p) != mtime]
-    if workspace.startswith("s3://"):
+    if workspace.startswith(S3_PREFIX):
         s3, bucket, prefix = _s3(workspace)
         for p in changed:
             s3.upload_file(str(p), bucket, f"{prefix}/{p.relative_to(work).as_posix()}")
