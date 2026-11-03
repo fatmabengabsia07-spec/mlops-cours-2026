@@ -68,9 +68,15 @@ def run_stage(module: str, args=(), inputs=None, outputs=None, env=None) -> None
         work = Path(tmp)
         for rel, src in (inputs or {}).items():
             copy(src, work / rel)
-        execute(module, args, work, env)
-        for rel, dst in (outputs or {}).items():
-            copy(work / rel, dst)
+
+        try:
+            execute(module, args, work, env)
+        finally:
+            # Copier les rapports disponibles même si l'étape échoue.
+            for rel, dst in (outputs or {}).items():
+                source = work / rel
+                if source.exists():
+                    copy(source, dst)
 
 
 # --- Airflow : dossier de travail du run, sur S3 (ou en local pour tester) ---------------
