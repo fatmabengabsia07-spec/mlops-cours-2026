@@ -13,11 +13,21 @@ paramètre ne doit dépendre d'une constante de ce module.
 import os
 
 from kfp import dsl
-from kfp.dsl import Artifact, ClassificationMetrics, Dataset, Input, Metrics, Model, Output
+from kfp.dsl import (
+    HTML,
+    Artifact,
+    ClassificationMetrics,
+    Dataset,
+    Input,
+    Markdown,
+    Metrics,
+    Model,
+    Output,
+)
 
 # Image construite et poussée à l'étape 2.4. Nouveau code dans l'image = nouveau tag.
 # Surcharge possible à la compilation : PIPELINE_IMAGE=… python -m pipelines.scoring_pipeline
-PIPELINE_IMAGE = os.getenv("PIPELINE_IMAGE", "localhost:5001/scoring-pipeline:1.0.0")
+PIPELINE_IMAGE = os.getenv("PIPELINE_IMAGE", "localhost:5001/scoring-pipeline:1.2.0")
 # Serveur MLflow du cours vu depuis un pod (DNS interne <service>.<namespace>)
 MLFLOW_URI = "http://mlflow.mlflow:5000"  # NOSONAR
 
@@ -42,6 +52,7 @@ def ingest_data(raw_data: Output[Dataset]) -> None:
 def validate_data(
     raw_data: Input[Dataset],
     report: Output[Artifact],
+    html: Output[HTML],
     checks: Output[Metrics],
 ) -> None:
     """Gate : python -m src.validate_data ; un contrôle en échec fait échouer le step."""
@@ -50,13 +61,13 @@ def validate_data(
 
     from pipelines.stage import run_stage
     from src.dataset_config import load_config
-    from src.validate_data import REPORT_JSON
+    from src.validate_data import REPORT_HTML, REPORT_JSON
 
     cfg = load_config()
     run_stage(
         "src.validate_data",
         inputs={cfg.raw_path: raw_data.path},
-        outputs={str(REPORT_JSON): report.path},  # reports/validation.json
+        outputs={str(REPORT_JSON): report.path, str(REPORT_HTML): html.path},
     )
     summary = json.loads(Path(report.path).read_text())
     for name in ("n_checks", "n_failed", "rows", "positive_rate"):
@@ -191,3 +202,91 @@ def register_model(run_id: str, mlflow_uri: str) -> str:
         f"name = '{MODEL_NAME}' and run_id = '{run_id}'"
     )
     return str(versions[0].version)
+
+
+@dsl.component(base_image=PIPELINE_IMAGE, install_kfp_package=False)
+def detect_drift(
+    reference_data: Input[Dataset],
+    current_data: Input[Dataset],
+    ks_alpha: float,
+    psi_threshold: float,
+    drift_share: float,
+    fail_on_drift: bool,
+    report: Output[Artifact],
+    html_report: Output[HTML],
+    markdown_report: Output[Markdown],
+    metrics: Output[Metrics],
+) -> None:
+    import json
+    from pathlib import Path
+
+    from pipelines.stage import run_stage
+    from src.detect_drift import (
+        CURRENT_CSV, REFERENCE_CSV, REPORT_HTML, REPORT_JSON, REPORT_MD
+    )
+
+    args = [
+        str(REFERENCE_CSV),
+        str(CURRENT_CSV),
+        "--ks-alpha", ks_alpha,
+        "--psi-threshold", psi_threshold,
+        "--drift-share", drift_share,
+    ]
+
+    if not fail_on_drift:
+        args.append("--no-fail")
+
+    run_stage(
+        "src.detect_drift",
+        args=args,
+        inputs={
+            str(REFERENCE_CSV): reference_data.path,
+            str(CURRENT_CSV): current_data.path,
+        },
+        outputs={
+            str(REPORT_JSON): report.path,
+            str(REPORT_HTML): html_report.path,
+            str(REPORT_MD): markdown_report.path,
+        },
+    )
+
+    summary = json.loads(Path(report.path).read_text())
+    for name in ("n_columns", "n_drifted", "share_drifted"):
+        metrics.log_metric(name, summary[name])
+
+
+@dsl.component(base_image=PIPELINE_IMAGE, install_kfp_package=False)
+def validate_model(
+    model: Input[Model],
+    train_data: Input[Dataset],
+    test_data: Input[Dataset],
+    report: Output[Artifact],
+    html_report: Output[HTML],
+    behavior_report: Output[Artifact],
+    metrics: Output[Metrics],
+) -> None:
+    import json
+    from pathlib import Path
+
+    from pipelines.stage import run_stage
+    from src.train import MODEL_DIR, TRAIN_CSV, TEST_CSV
+    from src.validate_model import REPORT_HTML, REPORT_JSON, JUNIT_XML
+
+    run_stage(
+        "src.validate_model",
+        inputs={
+            str(MODEL_DIR): model.path,
+            str(TRAIN_CSV): train_data.path,
+            str(TEST_CSV): test_data.path,
+        },
+        outputs={
+            str(REPORT_JSON): report.path,
+            str(REPORT_HTML): html_report.path,
+            str(JUNIT_XML): behavior_report.path,
+        },
+    )
+
+    summary = json.loads(Path(report.path).read_text())
+    for name, value in summary.items():
+        if isinstance(value, int | float):
+            metrics.log_metric(name, value)
