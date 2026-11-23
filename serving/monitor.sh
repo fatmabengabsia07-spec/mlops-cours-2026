@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+ISVC=${1:-scoring-model}
+NS=scoring
+SEL="serving.kserve.io/inferenceservice=${ISVC}"
+while true; do
+  clear
+  echo "=== $(date +%T) — InferenceService ${NS}/${ISVC} ==="
+  kubectl get isvc "$ISVC" -n "$NS"
+  echo ""
+  kubectl get kpa -n "$NS" -l "$SEL" 2>/dev/null
+  echo ""
+  kubectl get pods -n "$NS" -l "$SEL"
+  echo ""
+  kubectl top pods -n "$NS" -l "$SEL" --containers 2>/dev/null
+  sleep 2
+done
